@@ -24,8 +24,6 @@ namespace MauticOutlookPlugin {
             // Event handler to include the tracking gif when sending the email
             oOutlook.ItemSend += new Outlook.ApplicationEvents_11_ItemSendEventHandler(Application_ItemSend);
 
-            Trackable = false;
-
             // Retrieve the endpoint URL from the registry
             try {
                 var key = Registry.CurrentUser.OpenSubKey("Software");
@@ -33,7 +31,10 @@ namespace MauticOutlookPlugin {
                 key = key.OpenSubKey("Outlook Plugin");
                 EndpointUrl = key.GetValue("Endpoint URL").ToString();
                 MauticSecret = key.GetValue("Secret").ToString();
-            } catch (Exception ex) {
+            }
+            catch (Exception ex)
+            {
+                ex.GetType();
                 //MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
@@ -73,9 +74,12 @@ namespace MauticOutlookPlugin {
         }
 
         public void Application_ItemSend(object item, ref bool cancel) {
-            if (!Trackable) return;
 
-            var outlookMailtItem = (Outlook.MailItem)item;
+            var outlookMailtItem = item as Outlook.MailItem;
+
+            // check is the mail item trackable
+            if (!IsMessageTrackable(outlookMailtItem))
+                return;
 
             // Add the tracking gif to the email body if format is HTML
             if (outlookMailtItem.BodyFormat == Outlook.OlBodyFormat.olFormatHTML)
@@ -131,6 +135,95 @@ namespace MauticOutlookPlugin {
 
         public string MauticSecret { get; set; }
 
-        public bool Trackable { get; set; }
+        #region Support trackable seaparate message
+
+        private const string TrackableMailPropertyName = "http://schemas.microsoft.com/mapi/string/{E2C44672-114A-48FA-8CE5-3BF0F1782007}/trackable";
+
+        /// <summary>
+        /// Marks the mail item as trackable or not
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="isTrackable"></param>
+        public void MarkMessageTrackable(Outlook.MailItem item, bool isTrackable)
+        {
+            if (isTrackable)
+                SetMailItemProperty(item, TrackableMailPropertyName, true);
+            else
+                DeleteMailItemProperty(item, TrackableMailPropertyName);
+        }
+
+        /// <summary>
+        /// Checks is the message trackable
+        /// </summary>
+        /// <param name="item"></param>
+        /// <returns></returns>
+        public bool IsMessageTrackable(Outlook.MailItem item)
+        {
+            if (item == null)
+                return false;
+
+            object value = GetMailItemProperty(item, TrackableMailPropertyName);
+            return value != null;
+        }
+
+        /// <summary>
+        /// Sets the mail item property
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="propName"></param>
+        /// <param name="value"></param>
+        private void SetMailItemProperty(Outlook.MailItem item, string propName, object value)
+        {
+            try
+            {
+                Outlook.PropertyAccessor accessor = item.PropertyAccessor;
+                accessor?.SetProperty(propName, value);
+            }
+            catch (Exception ex)
+            {
+                //[SF] Don't re-throw any error
+                ex.GetType();
+            }
+        }
+
+        /// <summary>
+        /// Gets the mail item property
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="propName"></param>
+        /// <returns></returns>
+        private object GetMailItemProperty(Outlook.MailItem item, string propName)
+        {
+            object value = null;
+            try
+            {
+                Outlook.PropertyAccessor accessor = item.PropertyAccessor;
+                value = accessor.GetProperty(propName);
+            }
+            catch (System.Exception ex)
+            {
+                //[SF] Don't re-throw any error
+                ex.GetType();
+            }
+            return value;
+        }
+
+        private bool DeleteMailItemProperty(Outlook.MailItem item, string propName)
+        {
+            try
+            {
+                Outlook.PropertyAccessor accessor = item.PropertyAccessor;
+                accessor.DeleteProperty(propName);
+            }
+            catch (System.Exception ex)
+            {
+                //[SF] Don't re-throw any error
+                ex.GetType();
+                return false;
+            }
+            return true;
+        }
+
+        #endregion
     }
 }
